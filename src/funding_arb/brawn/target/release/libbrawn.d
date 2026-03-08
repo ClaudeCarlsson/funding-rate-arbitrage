@@ -1,0 +1,1 @@
+/home/claude/repos/funding-rate-arbitrage/src/funding_arb/brawn/target/release/libbrawn.so: /home/claude/repos/funding-rate-arbitrage/src/funding_arb/brawn/src/lib.rs /home/claude/repos/funding-rate-arbitrage/src/funding_arb/brawn/src/shm_layout.rs

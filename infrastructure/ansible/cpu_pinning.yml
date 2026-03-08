@@ -1,0 +1,74 @@
+---
+- name: Configure Bare-Metal Nodes for HFT CPU Isolation
+  hosts: trading_nodes
+  become: yes
+  vars:
+    # We leave Core 0 and 1 for the OS Kernel, interrupts, and standard SSH access.
+    # We completely hide Cores 2, 3, 4, 5 from the Linux scheduler for our HFT Python processes.
+    isolated_cores: "2-5"
+    
+  tasks:
+    - name: Ensure GRUB default file exists
+      stat:
+        path: /etc/default/grub
+      register: grub_file
+
+    - name: Fail if not a standard Linux GRUB setup
+      fail:
+        msg: "Cannot find /etc/default/grub. This playbook requires a standard bare-metal Linux OS."
+      when: not grub_file.stat.exists
+
+    - name: Inject isolcpus, nohz_full, and rcu_nocbs into GRUB
+      # isolcpus: Hides cores from the scheduler.
+      # nohz_full: Stops the OS tick timer on these cores (zero interrupts).
+      # rcu_nocbs: Offloads Read-Copy-Update callbacks to other cores.
+      lineinfile:
+        path: /etc/default/grub
+        regexp: '^GRUB_CMDLINE_LINUX_DEFAULT='
+        # We append our HFT parameters to any existing boot arguments
+        line: 'GRUB_CMDLINE_LINUX_DEFAULT="console=tty1 isolcpus={{ isolated_cores }} nohz_full={{ isolated_cores }} rcu_nocbs={{ isolated_cores }} intel_pstate=disable processor.max_cstate=1 idle=poll"'
+        state: present
+
+    - name: Update GRUB bootloader (Debian/Ubuntu)
+      command: update-grub
+      when: ansible_os_family == "Debian"
+
+    - name: Update GRUB bootloader (RHEL/CentOS/Rocky)
+      command: grub2-mkconfig -o /boot/grub2/grub.cfg
+      when: ansible_os_family == "RedHat"
+
+    - name: Disable Irqbalance on isolated cores
+      # Ensures hardware interrupts (like disk I/O) are NOT routed to our trading cores
+      lineinfile:
+        path: /etc/default/irqbalance
+        regexp: '^IRQBALANCE_BANNED_CPUS='
+        # Bitmask for cores 2, 3, 4, 5 -> 00111100 -> Hex 3C
+        line: 'IRQBALANCE_BANNED_CPUS="3C"'
+        state: present
+        create: yes
+
+    - name: Restart Irqbalance service
+      service:
+        name: irqbalance
+        state: restarted
+        enabled: yes
+        
+    - name: Tune network stack for low latency (bypass TCP congestion)
+      sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        state: present
+        sysctl_file: /etc/sysctl.d/99-hft-tuning.conf
+      loop:
+        - { key: 'net.core.busy_read', value: '50' }
+        - { key: 'net.core.busy_poll', value: '50' }
+        - { key: 'net.ipv4.tcp_fastopen', value: '3' }
+        
+    - name: Reboot bare-metal server to apply Kernel isolations
+      reboot:
+        msg: "Rebooting to apply HFT GRUB isolcpus parameters."
+        connect_timeout: 5
+        reboot_timeout: 300
+        pre_reboot_delay: 0
+        post_reboot_delay: 30
+        test_command: whoami

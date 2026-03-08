@@ -1,0 +1,38 @@
+---
+- name: Deploy XDP Hardware Decapsulator
+  hosts: trading_nodes
+  become: yes
+  tasks:
+    - name: Install eBPF toolchain
+      apt:
+        name:
+          - clang
+          - llvm
+          - libelf-dev
+          - libbpf-dev
+          - linux-tools-common
+          - linux-tools-generic
+        state: present
+
+    - name: Copy XDP Source Code
+      copy:
+        src: ../../src/funding_arb/ebpf/vxlan_strip.c
+        dest: /tmp/vxlan_strip.c
+
+    - name: Compile XDP program to eBPF Bytecode
+      shell: |
+        clang -O2 -g -target bpf -c /tmp/vxlan_strip.c -o /tmp/vxlan_strip.o
+
+    - name: Attach XDP program to eth0
+      # Using ip link to attach the compiled bytecode to the express data path (XDP)
+      # This allows for hardware-rate decapsulation of VxLAN headers.
+      shell: |
+        ip link set dev eth0 xdp off || true
+        ip link set dev eth0 xdp obj /tmp/vxlan_strip.o sec xdp
+      register: xdp_attach
+      failed_when: xdp_attach.rc != 0 and "Operation not supported" not in xdp_attach.stderr
+
+    - name: Verify XDP status
+      shell: ip link show eth0
+      register: ip_link_out
+      failed_when: "'xdp' not in ip_link_out.stdout"

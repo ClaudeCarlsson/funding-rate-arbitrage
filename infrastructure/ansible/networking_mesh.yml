@@ -1,0 +1,46 @@
+---
+- name: Establish Global VxLAN Multicast Mesh
+  hosts: trading_nodes
+  become: yes
+  tasks:
+    - name: Install networking tools and DPDK dependencies
+      apt:
+        name:
+          - iproute2
+          - bridge-utils
+          - dpdk
+          - dpdk-dev
+          - python3-pyelftools
+        state: present
+        update_cache: yes
+
+    - name: Configure VxLAN Interface (vxlan0)
+      # This creates a virtual L2 interface that encapsulates 224.0.0.1 traffic into unicast UDP
+      # VNI 100 is our private global broadcast domain
+      shell: |
+        ip link add vxlan0 type vxlan id 100 dstport 4789 dev eth0 group 239.1.1.1 || true
+        ip addr add 10.0.0.{{ node_index }}/24 dev vxlan0 || true
+        ip link set vxlan0 up
+      vars:
+        # node_index should be unique per host (1 for brain, 2 for tokyo, 3 for singapore)
+        node_index: "{{ hostvars[inventory_hostname].vni_index }}"
+
+    - name: Enable Hugepages for DPDK Kernel Bypass
+      # Necessary for high-speed user-space NIC polling
+      sysctl:
+        name: vm.nr_hugepages
+        value: '1024'
+        state: present
+        sysctl_file: /etc/sysctl.d/90-dpdk.conf
+
+    - name: Load UIO Kernel Module for DPDK
+      modprobe:
+        name: uio_pci_generic
+        state: present
+
+    - name: Bind NIC to DPDK (Warning: Destructive to standard networking)
+      # In a real HFT server, we would bind the secondary 10Gbps fiber NIC to DPDK
+      # while keeping the primary NIC for SSH/Management.
+      # This is a template command.
+      debug:
+        msg: "Ready to bind HFT NIC to dpdk-devbind.py --bind=uio_pci_generic <pci_addr>"

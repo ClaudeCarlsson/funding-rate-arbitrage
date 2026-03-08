@@ -1,0 +1,58 @@
+# Funding Rate Arbitrage System Configuration
+
+[scanner]
+poll_interval_s = 60.0
+order_book_depth = 5
+staleness_threshold_s = 300.0
+instruments = ["BTC/USDT:USDT", "ETH/USDT:USDT", "SOL/USDT:USDT"]
+
+[risk]
+max_delta_pct = 0.02
+max_position_pct = 0.20
+max_exchange_pct = 0.30
+min_collateral_ratio = 2.0
+max_drawdown = 0.05
+max_gross_leverage = 3.0
+correlation_floor = 0.95
+kelly_fraction = 0.25
+
+[optimizer]
+min_net_yield_bps = 5.0
+recompute_threshold_pct = 0.10
+max_cycles_to_evaluate = 50
+
+[executor]
+paper_trading = true
+limit_order_timeout_s = 5.0
+max_slippage_pct = 0.5
+emergency_unwind_enabled = true
+
+[database]
+state_db_path = "data/state.db"
+trades_db_path = "data/trades.db"
+funding_db_path = "data/funding.db"
+parquet_dir = "data/parquet"
+
+[exchanges.binance]
+enabled = true
+api_key_env = "BINANCE_API_KEY"
+api_secret_env = "BINANCE_API_SECRET"
+sandbox = false
+rate_limit_ms = 100
+max_position_usd = 10000.0
+
+[exchanges.hyperliquid]
+enabled = true
+api_key_env = "HYPERLIQUID_API_KEY"
+api_secret_env = "HYPERLIQUID_API_SECRET"
+sandbox = false
+rate_limit_ms = 200
+max_position_usd = 5000.0
+
+[exchanges.bybit]
+enabled = false
+api_key_env = "BYBIT_API_KEY"
+api_secret_env = "BYBIT_API_SECRET"
+sandbox = false
+rate_limit_ms = 100
+max_position_usd = 10000.0

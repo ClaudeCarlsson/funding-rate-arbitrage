@@ -1,0 +1,93 @@
+---
+- name: Configure Hardware PTP Synchronization
+  hosts: trading_nodes
+  become: yes
+  tasks:
+    - name: Install PTP stack (linuxptp)
+      apt:
+        name: linuxptp
+        state: present
+        update_cache: yes
+
+    - name: Disable standard NTP services to prevent clock fighting
+      service:
+        name: "{{ item }}"
+        state: stopped
+        enabled: no
+      loop:
+        - ntp
+        - chrony
+        - systemd-timesyncd
+      ignore_errors: yes
+
+    - name: Configure ptp4l for Hardware Timestamping
+      # We assume eth0 is the HFT-capable NIC. In production, we'd use the 10G fiber interface.
+      # -2: Slave only mode
+      # -i: Interface
+      # -m: Log to stdout
+      # -H: Hardware timestamping
+      copy:
+        dest: /etc/linuxptp/ptp4l.conf
+        content: |
+          [global]
+          twoStepFlag 1
+          slaveOnly 1
+          priority1 128
+          priority2 128
+          domainNumber 0
+          logging_level 6
+          verbose 1
+          summary_interval 0
+          
+          [eth0]
+          network_transport UDPv4
+          delay_mechanism E2E
+
+    - name: Create systemd service for ptp4l
+      copy:
+        dest: /etc/systemd/system/ptp4l.service
+        content: |
+          [Unit]
+          Description=Precision Time Protocol daemon
+          After=network.target
+
+          [Service]
+          ExecStart=/usr/sbin/ptp4l -f /etc/linuxptp/ptp4l.conf -i eth0 -H
+          Restart=always
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Create systemd service for phc2sys
+      # Synchronizes System Clock (CLOCK_REALTIME) to the NIC Hardware Clock (PHC)
+      copy:
+        dest: /etc/systemd/system/phc2sys.service
+        content: |
+          [Unit]
+          Description=Synchronize system clock or PTP hardware clock
+          After=ptp4l.service
+          Requires=ptp4l.service
+
+          [Service]
+          ExecStart=/usr/sbin/phc2sys -s eth0 -c CLOCK_REALTIME -w
+          Restart=always
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Start and enable PTP services
+      systemd:
+        name: "{{ item }}"
+        state: restarted
+        enabled: yes
+        daemon_reload: yes
+      loop:
+        - ptp4l
+        - phc2sys
+
+    - name: Verify Hardware Timestamping Capability
+      shell: ethtool -T eth0
+      register: ethtool_output
+      failed_when: "'hardware-transmit' not in ethtool_output.stdout"
