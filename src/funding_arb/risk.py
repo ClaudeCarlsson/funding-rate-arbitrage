@@ -19,7 +19,7 @@ class RiskManager:
 
     def __init__(self, config: RiskConfig | None = None, gamma: float = 1.0):
         self.config = config or RiskConfig()
-        self._default_config = RiskConfig()  # for regime reset
+        self._base_config = self.config  # regime adjustments derive from this
         self.gamma = gamma  # Sensitivity to "worst-case" perturbations for H-Infinity
 
     def check_invariants(self, portfolio: Portfolio) -> list[Violation]:
@@ -245,22 +245,23 @@ class RiskManager:
         ]
 
     def adjust_for_regime(self, vol_regime: str) -> None:
-        """Tighten or loosen parameters based on volatility regime."""
+        """Tighten or loosen parameters based on volatility regime.
+
+        Derives from _base_config (the config passed at construction), not
+        from hardcoded RiskConfig() defaults, so custom configs are preserved.
+        """
         if vol_regime == "high":
             self.config = RiskConfig(
-                max_delta_pct=self._default_config.max_delta_pct * 0.5,
-                max_position_pct=self._default_config.max_position_pct * 0.6,
-                max_exchange_pct=self._default_config.max_exchange_pct,
-                min_collateral_ratio=self._default_config.min_collateral_ratio * 1.5,
-                max_drawdown=self._default_config.max_drawdown,
-                max_gross_leverage=self._default_config.max_gross_leverage * 0.75,
-                correlation_floor=self._default_config.correlation_floor,
-                kelly_fraction=self._default_config.kelly_fraction * 0.5,
+                max_delta_pct=self._base_config.max_delta_pct * 0.5,
+                max_position_pct=self._base_config.max_position_pct * 0.6,
+                max_exchange_pct=self._base_config.max_exchange_pct,
+                min_collateral_ratio=self._base_config.min_collateral_ratio * 1.5,
+                max_drawdown=self._base_config.max_drawdown,
+                max_gross_leverage=self._base_config.max_gross_leverage * 0.75,
+                correlation_floor=self._base_config.correlation_floor,
+                kelly_fraction=self._base_config.kelly_fraction * 0.5,
             )
             logger.info("Risk parameters tightened for high-volatility regime")
-        elif vol_regime == "low":
-            self.config = RiskConfig()
-            logger.info("Risk parameters restored to defaults for low-volatility regime")
-        elif vol_regime == "normal":
-            self.config = RiskConfig()
-            logger.info("Risk parameters at normal levels")
+        elif vol_regime in ("low", "normal"):
+            self.config = self._base_config
+            logger.info(f"Risk parameters restored to base config for {vol_regime} regime")

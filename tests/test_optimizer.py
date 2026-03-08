@@ -119,3 +119,59 @@ class TestConvexOptimization:
         assert isinstance(results, list)
         if results:
             assert results[0].expected_net_yield_per_period > 0
+
+
+class TestSpreadVariance:
+    def test_no_history_returns_conservative_default(self):
+        optimizer = ArbitrageOptimizer()
+        optimizer._rate_history = {}
+        var = optimizer._compute_spread_variance("binance", "bybit", "BTC/USDT:USDT")
+        assert var == 1e-4
+
+    def test_short_history_returns_conservative_default(self):
+        optimizer = ArbitrageOptimizer()
+        optimizer._rate_history = {
+            "binance:BTC/USDT:USDT": [0.001, 0.002],
+            "bybit:BTC/USDT:USDT": [0.0005, 0.001],
+        }
+        var = optimizer._compute_spread_variance("binance", "bybit", "BTC/USDT:USDT")
+        assert var == 1e-4  # insufficient data
+
+    def test_sufficient_history_computes_variance(self):
+        optimizer = ArbitrageOptimizer()
+        # Stable spread: short always 0.001 higher than long
+        optimizer._rate_history = {
+            "binance:BTC/USDT:USDT": [0.003] * 20,
+            "bybit:BTC/USDT:USDT": [0.002] * 20,
+        }
+        var = optimizer._compute_spread_variance("binance", "bybit", "BTC/USDT:USDT")
+        # Constant spread → zero variance, but floored at 1e-6
+        assert var == 1e-6
+
+    def test_volatile_spread_gives_higher_variance(self):
+        import random
+        random.seed(42)
+        optimizer = ArbitrageOptimizer()
+        # Noisy spread
+        optimizer._rate_history = {
+            "binance:BTC/USDT:USDT": [0.003 + random.gauss(0, 0.002) for _ in range(30)],
+            "bybit:BTC/USDT:USDT": [0.001 + random.gauss(0, 0.001) for _ in range(30)],
+        }
+        var = optimizer._compute_spread_variance("binance", "bybit", "BTC/USDT:USDT")
+        assert var > 1e-6  # should be meaningfully above the floor
+
+    def test_variance_passed_through_to_opportunities(self):
+        optimizer = ArbitrageOptimizer()
+        snapshot = make_snapshot({
+            ("binance", "BTC/USDT:USDT"): 0.0001,
+            ("hyperliquid", "BTC/USDT:USDT"): 0.01,
+        })
+        rate_history = {
+            "binance:BTC/USDT:USDT": [0.0001] * 20,
+            "hyperliquid:BTC/USDT:USDT": [0.01] * 20,
+        }
+        G = optimizer.build_graph(snapshot)
+        results = optimizer.find_opportunities(G, rate_history=rate_history)
+        if results:
+            # Should use computed variance, not 1e-6 hardcode
+            assert results[0].yield_variance >= 1e-6

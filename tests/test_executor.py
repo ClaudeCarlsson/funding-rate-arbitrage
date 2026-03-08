@@ -99,6 +99,43 @@ class TestPaperTrading:
         assert result is None
 
 
+class TestPartialPosition:
+    @pytest.mark.asyncio
+    async def test_partial_fill_returns_position(self):
+        """If leg B fails, executor returns the partial position so it's tracked."""
+        config = _make_config(mode="live")
+        executor = TradeExecutor(config)
+
+        # Leg A succeeds
+        mock_ex_a = AsyncMock()
+        mock_ex_a.fetch_ticker = AsyncMock(return_value={"last": 50000.0})
+        mock_ex_a.create_order = AsyncMock(return_value={
+            "id": "order-a", "average": 50000.0, "filled": 0.004,
+            "fee": {"cost": 0.1}, "status": "closed",
+        })
+        mock_ex_a.fetch_order = AsyncMock(return_value={
+            "id": "order-a", "status": "closed", "average": 50000.0,
+            "filled": 0.004, "fee": {"cost": 0.1},
+        })
+
+        # Leg B fails all retries
+        mock_ex_b = AsyncMock()
+        mock_ex_b.fetch_ticker = AsyncMock(return_value={"last": 50000.0})
+        mock_ex_b.create_order = AsyncMock(side_effect=Exception("connection lost"))
+
+        executor._exchanges["binance"] = mock_ex_a
+        executor._exchanges["bybit"] = mock_ex_b
+
+        opp = _make_opportunity()
+        position = await executor.open_position(opp, 200.0)
+
+        # Should return the partial position, not None
+        assert position is not None
+        assert position.leg_a is not None
+        assert position.leg_b is None
+        assert position.is_open
+
+
 class TestKillSwitch:
     def test_kill_switch_not_active_by_default(self):
         config = _make_config()

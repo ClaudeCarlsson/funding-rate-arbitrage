@@ -154,6 +154,16 @@ class TestRegimeAdjustment:
         rm.adjust_for_regime("low")
         assert rm.config.kelly_fraction == 0.25
 
+    def test_regime_preserves_custom_config(self):
+        custom = RiskConfig(kelly_fraction=0.15, max_gross_leverage=2.0)
+        rm = RiskManager(config=custom)
+        rm.adjust_for_regime("high")
+        assert rm.config.kelly_fraction == 0.15 * 0.5
+        assert rm.config.max_gross_leverage == 2.0 * 0.75
+        rm.adjust_for_regime("normal")
+        assert rm.config.kelly_fraction == 0.15
+        assert rm.config.max_gross_leverage == 2.0
+
 
 class TestPreTradeCheck:
     def test_passes_healthy(self):

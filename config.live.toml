@@ -11,7 +11,7 @@ instruments = ["BTC/USDT:USDT", "ETH/USDT:USDT"]
 [risk]
 max_delta_pct = 0.02
 max_position_pct = 0.20
-max_exchange_pct = 0.40          # relaxed for 2 exchanges (50% each is fine)
+max_exchange_pct = 0.55          # relaxed for 2 exchanges (need headroom above 50%)
 min_collateral_ratio = 2.0
 max_drawdown = 0.05
 max_gross_leverage = 2.0         # conservative: 2x not 3x

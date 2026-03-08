@@ -224,7 +224,9 @@ class Orchestrator:
 
             # 10. Build graph and find complex opportunities
             graph = self.optimizer.build_graph(snapshot)
-            graph_opps = self.optimizer.find_opportunities(graph)
+            graph_opps = self.optimizer.find_opportunities(
+                graph, rate_history=self._funding_history
+            )
             GRAPH_OPPORTUNITIES.set(len(graph_opps))
             if graph_opps:
                 logger.info(f"Found {len(graph_opps)} graph-based opportunities")
@@ -256,7 +258,20 @@ class Orchestrator:
                     if position:
                         self.portfolio.add_position(position)
                         POSITIONS_OPENED.inc()
-                        if self.config.executor.mode == "dry_run":
+
+                        # Detect partial fill (one-legged position)
+                        if position.leg_a and not position.leg_b:
+                            logger.critical(
+                                f"PARTIAL POSITION {position.id}: unhedged "
+                                f"{position.leg_a.side.value} on {position.leg_a.exchange} — "
+                                f"attempting immediate unwind"
+                            )
+                            await self.alerter.notify_emergency_unwind(
+                                f"Partial position {position.id}: leg B failed. "
+                                f"Unwinding leg A ({position.leg_a.side.value} on {position.leg_a.exchange})"
+                            )
+                            await self.executor.close_position(position)
+                        elif self.config.executor.mode == "dry_run":
                             legs = []
                             if position.leg_a:
                                 legs.append(position.leg_a.raw if position.leg_a.raw else {})

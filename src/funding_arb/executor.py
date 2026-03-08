@@ -131,9 +131,10 @@ class TradeExecutor:
         if leg_b_result is None:
             logger.error(
                 f"Position {position_id}: leg B failed after leg A filled — "
-                f"MANUAL INTERVENTION NEEDED to close leg A on {opp.leg_a.exchange}"
+                f"PARTIAL POSITION: unhedged {leg_a_result.side.value} on {opp.leg_a.exchange}"
             )
-            # Still record the partial position so we can track and unwind it
+            # Return the partial position so the orchestrator tracks the exposure
+            # and the risk manager can see the unhedged delta
             position = ArbitragePosition(
                 id=position_id,
                 leg_a=leg_a_result,
@@ -142,7 +143,7 @@ class TradeExecutor:
                 entry_spread=opp.expected_spread,
             )
             self.db.save_position(position)
-            return None
+            return position
 
         position = ArbitragePosition(
             id=position_id,

@@ -191,8 +191,19 @@ class ArbitrageOptimizer:
                 edge_type=EdgeType.TRANSFER,
             )
 
-    def find_opportunities(self, G: nx.DiGraph) -> list[Opportunity]:
-        """Solve the convex network flow problem for optimal arbitrage allocation."""
+    def find_opportunities(
+        self,
+        G: nx.DiGraph,
+        rate_history: dict[str, list[float]] | None = None,
+    ) -> list[Opportunity]:
+        """Solve the convex network flow problem for optimal arbitrage allocation.
+
+        Args:
+            G: The arbitrage graph.
+            rate_history: Optional mapping of "exchange:symbol" → list of recent rates.
+                Used to compute realistic yield variance for Kelly sizing.
+        """
+        self._rate_history = rate_history or {}
         if G.number_of_edges() == 0:
             return []
 
@@ -306,10 +317,15 @@ class ArbitrageOptimizer:
                         aggressive_price=0.0
                     )
 
+                    # Compute yield variance from rate history
+                    variance = self._compute_spread_variance(
+                        s["u"].exchange, long_flow["u"].exchange, inst
+                    )
+
                     opp = Opportunity(
                         cycle=Cycle(nodes=[s["u"], s["v"], long_flow["u"], long_flow["v"]], total_weight=-net_rate),
                         expected_net_yield_per_period=net_rate,
-                        yield_variance=1e-6,
+                        yield_variance=variance,
                         capital_required=trade_flow,
                         risk_adjusted_yield=net_rate * (trade_flow ** 0.5),
                         exchange=s["u"].exchange,
@@ -324,6 +340,35 @@ class ArbitrageOptimizer:
                     long_flow["flow"] -= trade_flow
         opportunities.sort(key=lambda o: o.risk_adjusted_yield, reverse=True)
         return opportunities[:self.config.max_cycles_to_evaluate]
+
+    def _compute_spread_variance(
+        self, short_exchange: str, long_exchange: str, symbol: str
+    ) -> float:
+        """Compute variance of the net spread from rate history.
+
+        Uses individual rate histories to estimate spread variance.
+        Falls back to a conservative default (1e-4) if insufficient data.
+        """
+        short_key = f"{short_exchange}:{symbol}"
+        long_key = f"{long_exchange}:{symbol}"
+
+        short_hist = self._rate_history.get(short_key, [])
+        long_hist = self._rate_history.get(long_key, [])
+
+        if len(short_hist) < 6 or len(long_hist) < 6:
+            # Not enough data — use conservative default that makes Kelly
+            # produce reasonable sizes rather than enormous ones
+            return 1e-4
+
+        # Align to the shorter series
+        n = min(len(short_hist), len(long_hist))
+        spreads = np.array([
+            short_hist[-n + i] - long_hist[-n + i] for i in range(n)
+        ])
+
+        var = float(np.var(spreads, ddof=1))
+        # Floor at 1e-6 to avoid division issues in Kelly
+        return max(var, 1e-6)
 
     def find_simple_opportunities(self, snapshot: MarketSnapshot) -> list[dict]:
         """Find simple cross-exchange funding rate differentials without full graph."""
