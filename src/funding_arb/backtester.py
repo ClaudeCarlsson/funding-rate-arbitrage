@@ -180,9 +180,6 @@ class Backtester:
         )
         self.risk_manager = RiskManager()
 
-        # Integrate Queue Simulator for realistic paper trading queue modeling
-        from .queue_simulator import FIFOQueueSimulator
-        self.queue_sim = FIFOQueueSimulator()
 
     def run(self, funding_data: pd.DataFrame) -> BacktestResult:
         """Run backtest on historical funding rate data.

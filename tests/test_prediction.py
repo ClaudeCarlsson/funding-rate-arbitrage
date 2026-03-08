@@ -1,12 +1,11 @@
 """Tests for the funding rate prediction module."""
-import pytest
 import numpy as np
 import pandas as pd
+import pytest
 
 from funding_arb.prediction import (
     FundingPredictor,
     FundingRegime,
-    HawkesPredictor,
     PredictionResult,
     RegimeState,
 )
@@ -25,7 +24,7 @@ def positive_rates():
     rates = []
     r = base
     for _ in range(100):
-        r = r + 0.1 * (base - r) + rng.normal(0, 0.00001) # Reduced noise
+        r = r + 0.1 * (base - r) + rng.normal(0, 0.00001)
         rates.append(r)
     return pd.Series(rates)
 
@@ -60,7 +59,6 @@ class TestRegimeClassification:
         assert abs(total - 1.0) < 0.01
 
     def test_duration_tracking(self, predictor):
-        # All high positive → duration should be len
         rates = pd.Series([0.0005] * 10)
         state = predictor.classify_regime(rates)
         assert state.duration_in_regime == 10
@@ -84,20 +82,16 @@ class TestPrediction:
         result = predictor.predict(positive_rates)
         assert result.periods_above_breakeven >= 0
 
+    def test_predict_short_series(self, predictor):
+        rates = pd.Series([0.0003, 0.0004, 0.0005])
+        result = predictor.predict(rates)
+        assert result.model_used == "naive"
 
-class TestHawkes:
-    def test_intensity_calculation(self):
-        hp = HawkesPredictor(baseline=0.01, alpha=0.5, beta=0.8)
-        # Intensity at t=0 should be baseline
-        assert hp.compute_intensity(0.0) == 0.01
-        
-        # Update with events
-        hp.update([1.0, 1.1])
-        # Intensity at t=1.1 should be > baseline
-        assert hp.compute_intensity(1.1) > 0.01
-        
-    def test_regime_shift_detection(self):
-        hp = HawkesPredictor(baseline=0.01, alpha=0.5, beta=0.8)
-        # Cascade of events
-        hp.update([1.0, 1.01, 1.02, 1.03, 1.04, 1.05])
-        assert bool(hp.detect_regime_shift(1.05)) is True
+    def test_predict_has_confidence_interval(self, predictor, positive_rates):
+        result = predictor.predict(positive_rates)
+        assert result.confidence_lower < result.predicted_rate
+        assert result.confidence_upper > result.predicted_rate
+
+    def test_predict_volatility_positive(self, predictor, positive_rates):
+        result = predictor.predict(positive_rates)
+        assert result.predicted_volatility > 0

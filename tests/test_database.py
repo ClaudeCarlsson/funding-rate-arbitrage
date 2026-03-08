@@ -546,3 +546,74 @@ class TestSystemState:
         # Verify it parses as a valid ISO datetime
         dt = datetime.fromisoformat(row[0])
         assert dt.year >= 2025
+
+
+class TestDryTrades:
+    def test_save_and_retrieve_dry_trade(self, db):
+        payload = {
+            "position_id": "dry-001",
+            "label": "A",
+            "exchange": "binance",
+            "symbol": "BTC/USDT:USDT",
+            "side": "sell",
+            "amount": 0.004,
+            "would_fill_at": 50000.0,
+            "bid": 49990.0,
+            "ask": 50010.0,
+            "spread_bps": 4.0,
+            "estimated_fee": 0.08,
+            "size_usd": 200.0,
+            "timestamp": "2026-03-08T12:00:00+00:00",
+        }
+        db.save_dry_trade(payload)
+
+        trades = db.get_dry_trades()
+        assert len(trades) == 1
+        t = trades[0]
+        assert t["exchange"] == "binance"
+        assert t["symbol"] == "BTC/USDT:USDT"
+        assert t["side"] == "sell"
+        assert t["would_fill_at"] == 50000.0
+        assert t["spread_bps"] == 4.0
+        assert t["size_usd"] == 200.0
+
+    def test_dry_trades_ordered_newest_first(self, db):
+        for i in range(3):
+            db.save_dry_trade({
+                "position_id": f"dry-{i:03d}",
+                "label": "A",
+                "exchange": "binance",
+                "symbol": "BTC/USDT:USDT",
+                "side": "sell",
+                "amount": 0.004,
+                "would_fill_at": 50000.0 + i,
+                "bid": 49990.0,
+                "ask": 50010.0,
+                "spread_bps": 4.0,
+                "estimated_fee": 0.08,
+                "size_usd": 200.0,
+                "timestamp": f"2026-03-0{i+1}T12:00:00+00:00",
+            })
+
+        trades = db.get_dry_trades()
+        assert len(trades) == 3
+        # Newest first (highest id)
+        assert trades[0]["position_id"] == "dry-002"
+        assert trades[2]["position_id"] == "dry-000"
+
+    def test_dry_trades_respects_limit(self, db):
+        for i in range(10):
+            db.save_dry_trade({
+                "position_id": f"dry-{i:03d}",
+                "label": "A",
+                "exchange": "binance",
+                "symbol": "ETH/USDT:USDT",
+                "side": "buy",
+                "amount": 0.1,
+                "would_fill_at": 3000.0,
+                "size_usd": 200.0,
+                "timestamp": "2026-03-08T12:00:00+00:00",
+            })
+
+        trades = db.get_dry_trades(limit=3)
+        assert len(trades) == 3

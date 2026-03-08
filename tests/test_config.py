@@ -136,7 +136,7 @@ class TestOptimizerConfig:
 class TestExecutorConfig:
     def test_defaults(self):
         ec = ExecutorConfig()
-        assert ec.paper_trading is True
+        assert ec.mode == "paper"
         assert ec.limit_order_timeout_s == 5.0
         assert ec.max_slippage_pct == 0.5
         assert ec.emergency_unwind_enabled is True
@@ -200,7 +200,7 @@ class TestLoadConfig:
             max_cycles_to_evaluate = 100
 
             [executor]
-            paper_trading = false
+            mode = "live"
             limit_order_timeout_s = 10.0
             max_slippage_pct = 0.3
             emergency_unwind_enabled = false
@@ -254,7 +254,7 @@ class TestLoadConfig:
         assert cfg.optimizer.max_cycles_to_evaluate == 100
 
         # Executor
-        assert cfg.executor.paper_trading is False
+        assert cfg.executor.mode == "live"
         assert cfg.executor.limit_order_timeout_s == 10.0
         assert cfg.executor.max_slippage_pct == 0.3
         assert cfg.executor.emergency_unwind_enabled is False
@@ -398,3 +398,35 @@ class TestLoadConfig:
 
         cfg = load_config(str(config_path))
         assert cfg.optimizer.min_net_yield_bps == 42.0
+
+    def test_backward_compat_paper_trading_true(self, tmp_path):
+        """Old-style paper_trading = true → mode = 'paper'."""
+        config_path = tmp_path / "compat.toml"
+        config_path.write_text("[executor]\npaper_trading = true\n")
+
+        cfg = load_config(config_path)
+        assert cfg.executor.mode == "paper"
+
+    def test_backward_compat_paper_trading_false(self, tmp_path):
+        """Old-style paper_trading = false → mode = 'live'."""
+        config_path = tmp_path / "compat2.toml"
+        config_path.write_text("[executor]\npaper_trading = false\n")
+
+        cfg = load_config(config_path)
+        assert cfg.executor.mode == "live"
+
+    def test_mode_dry_run(self, tmp_path):
+        """New-style mode = 'dry_run' works directly."""
+        config_path = tmp_path / "dryrun.toml"
+        config_path.write_text('[executor]\nmode = "dry_run"\n')
+
+        cfg = load_config(config_path)
+        assert cfg.executor.mode == "dry_run"
+
+    def test_mode_takes_precedence_over_paper_trading(self, tmp_path):
+        """If both mode and paper_trading are set, mode wins."""
+        config_path = tmp_path / "both.toml"
+        config_path.write_text('[executor]\npaper_trading = true\nmode = "live"\n')
+
+        cfg = load_config(config_path)
+        assert cfg.executor.mode == "live"

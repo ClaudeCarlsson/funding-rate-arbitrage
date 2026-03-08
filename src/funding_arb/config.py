@@ -62,10 +62,12 @@ class OptimizerConfig:
 
 @dataclass(frozen=True)
 class ExecutorConfig:
-    paper_trading: bool = True
+    mode: str = "paper"  # "paper" | "dry_run" | "live"
     limit_order_timeout_s: float = 5.0
     max_slippage_pct: float = 0.5
     emergency_unwind_enabled: bool = True
+    max_position_usd: float = 200.0
+    max_open_positions: int = 2
 
 
 @dataclass(frozen=True)
@@ -99,6 +101,13 @@ def load_config(path: str | Path = "config.toml") -> Config:
     for name, ex_data in raw.get("exchanges", {}).items():
         exchanges[name] = ExchangeConfig(name=name, **ex_data)
 
+    # Handle backward-compatible executor config: paper_trading bool → mode string
+    executor_raw = dict(raw.get("executor", {}))
+    if "paper_trading" in executor_raw and "mode" not in executor_raw:
+        executor_raw["mode"] = "paper" if executor_raw.pop("paper_trading") else "live"
+    elif "paper_trading" in executor_raw:
+        executor_raw.pop("paper_trading")  # mode takes precedence
+
     return Config(
         exchanges=exchanges,
         risk=RiskConfig(**raw.get("risk", {})),
@@ -107,6 +116,6 @@ def load_config(path: str | Path = "config.toml") -> Config:
             if k != "instruments"
         } | ({"instruments": raw["scanner"]["instruments"]} if "instruments" in raw.get("scanner", {}) else {})),
         optimizer=OptimizerConfig(**raw.get("optimizer", {})),
-        executor=ExecutorConfig(**raw.get("executor", {})),
+        executor=ExecutorConfig(**executor_raw),
         database=DatabaseConfig(**raw.get("database", {})),
     )

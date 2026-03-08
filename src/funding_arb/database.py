@@ -93,6 +93,26 @@ class Database:
                 )
             """)
 
+        with sqlite3.connect(self.trades_db_path) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS dry_trades (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    position_id TEXT NOT NULL,
+                    label TEXT NOT NULL,
+                    exchange TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    side TEXT NOT NULL,
+                    amount REAL NOT NULL,
+                    would_fill_at REAL NOT NULL,
+                    bid REAL,
+                    ask REAL,
+                    spread_bps REAL,
+                    estimated_fee REAL,
+                    size_usd REAL NOT NULL,
+                    timestamp TEXT NOT NULL
+                )
+            """)
+
         with sqlite3.connect(self.state_db_path) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS system_state (
@@ -249,6 +269,41 @@ class Database:
             realized_pnl=row[17] or 0.0,
             funding_collected=row[18] or 0.0,
         )
+
+    def save_dry_trade(self, payload: dict) -> None:
+        """Save a dry run trade record."""
+        with sqlite3.connect(self.trades_db_path) as conn:
+            conn.execute(
+                """INSERT INTO dry_trades
+                   (position_id, label, exchange, symbol, side, amount,
+                    would_fill_at, bid, ask, spread_bps, estimated_fee,
+                    size_usd, timestamp)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    payload.get("position_id", ""),
+                    payload.get("label", ""),
+                    payload["exchange"],
+                    payload["symbol"],
+                    payload["side"],
+                    payload["amount"],
+                    payload["would_fill_at"],
+                    payload.get("bid"),
+                    payload.get("ask"),
+                    payload.get("spread_bps"),
+                    payload.get("estimated_fee"),
+                    payload["size_usd"],
+                    payload["timestamp"],
+                ),
+            )
+
+    def get_dry_trades(self, limit: int = 100) -> list[dict]:
+        """Get recent dry run trades."""
+        with sqlite3.connect(self.trades_db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM dry_trades ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def save_funding_rates_parquet(
         self, rates: list[FundingRate], filename: str | None = None

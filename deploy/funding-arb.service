@@ -1,0 +1,28 @@
+[Unit]
+Description=Funding Rate Arbitrage System
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/funding-rate-arbitrage
+ExecStart=/home/ubuntu/.local/bin/uv run funding-arb --config config.toml --log-level INFO
+Restart=on-failure
+RestartSec=30
+
+# Environment file for API keys (chmod 600)
+EnvironmentFile=/home/ubuntu/.env.funding-arb
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=funding-arb
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/funding-rate-arbitrage/data
+
+[Install]
+WantedBy=multi-user.target

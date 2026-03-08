@@ -160,6 +160,34 @@ class TelegramAlerter:
         )
         await self.send_message(text)
 
+    async def notify_dry_trade(self, opp: dict[str, Any], legs: list[dict]) -> None:
+        """Alert showing what a dry run would have traded."""
+        leg_lines = []
+        for leg in legs:
+            leg_lines.append(
+                f"  {leg.get('side', '').upper()} {leg.get('exchange', '')} "
+                f"@ {leg.get('would_fill_at', 0):.2f} "
+                f"(spread {leg.get('spread_bps', 0):.1f}bps)"
+            )
+
+        net_yield = opp.get("net_yield_per_period", 0)
+        apr = opp.get("annualized_yield", 0) * 100
+        size = legs[0].get("size_usd", 0) if legs else 0
+        est_fees = sum(l.get("estimated_fee", 0) for l in legs)
+
+        text = (
+            f"\U0001f50d <b>DRY RUN — Would Trade</b>\n"
+            f"Instrument: {opp.get('instrument', 'N/A')}\n"
+            f"Short {opp.get('short_exchange', '')} @ {opp.get('short_rate', 0):.4f}% "
+            f"\u2192 Long {opp.get('long_exchange', '')} @ {opp.get('long_rate', 0):.4f}%\n"
+            f"Net yield: {net_yield * 10000:.1f} bps ({apr:.1f}% APR)\n"
+            f"Size: ${size:,.0f} per leg\n"
+            f"Estimated fees: ${est_fees:.4f}\n"
+            + "\n".join(leg_lines) + "\n"
+            f"\u23ed\ufe0f No order placed"
+        )
+        await self.send_message(text)
+
     async def notify_system_start(self) -> None:
         """Alert when the system starts."""
         text = (
@@ -226,6 +254,9 @@ class LogAlerter:
 
     async def notify_opportunity(self, opp: dict[str, Any]) -> None:
         logger.info(f"[ALERT] Opportunity: {opp.get('instrument', 'N/A')}")
+
+    async def notify_dry_trade(self, opp: dict[str, Any], legs: list[dict]) -> None:
+        logger.info(f"[ALERT] Dry run trade: {opp.get('instrument', 'N/A')}, {len(legs)} legs")
 
     async def notify_system_start(self) -> None:
         logger.info("[ALERT] System started")

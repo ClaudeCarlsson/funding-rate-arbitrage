@@ -1,0 +1,58 @@
+# Funding Rate Arbitrage — Phase 3 Live Configuration
+# Conservative settings for supervised trading with $1-2k capital.
+# Copy to config.toml and set environment variables before running.
+
+[scanner]
+poll_interval_s = 60.0
+order_book_depth = 5
+staleness_threshold_s = 300.0
+instruments = ["BTC/USDT:USDT", "ETH/USDT:USDT"]
+
+[risk]
+max_delta_pct = 0.02
+max_position_pct = 0.20
+max_exchange_pct = 0.40          # relaxed for 2 exchanges (50% each is fine)
+min_collateral_ratio = 2.0
+max_drawdown = 0.05
+max_gross_leverage = 2.0         # conservative: 2x not 3x
+correlation_floor = 0.95
+kelly_fraction = 0.15            # 15% Kelly, more conservative than default 25%
+
+[optimizer]
+min_net_yield_bps = 5.0
+recompute_threshold_pct = 0.10
+max_cycles_to_evaluate = 20
+max_position_usd = 200.0
+
+[executor]
+mode = "dry_run"                 # Start with "dry_run", switch to "live" after validation
+max_slippage_pct = 0.3
+emergency_unwind_enabled = true
+max_position_usd = 200.0        # hard cap per position
+max_open_positions = 2           # max concurrent arb pairs
+
+[database]
+state_db_path = "data/state.db"
+trades_db_path = "data/trades.db"
+funding_db_path = "data/funding.db"
+parquet_dir = "data/parquet"
+
+# Exchange 1: Binance
+# Required env vars: BINANCE_API_KEY, BINANCE_API_SECRET
+[exchanges.binance]
+enabled = true
+api_key_env = "BINANCE_API_KEY"
+api_secret_env = "BINANCE_API_SECRET"
+sandbox = false
+rate_limit_ms = 100
+max_position_usd = 500.0
+
+# Exchange 2: Bybit
+# Required env vars: BYBIT_API_KEY, BYBIT_API_SECRET
+[exchanges.bybit]
+enabled = true
+api_key_env = "BYBIT_API_KEY"
+api_secret_env = "BYBIT_API_SECRET"
+sandbox = false
+rate_limit_ms = 100
+max_position_usd = 500.0

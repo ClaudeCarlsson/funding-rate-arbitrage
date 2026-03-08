@@ -205,6 +205,45 @@ class RiskManager:
         size = max(0.0, min(robust_size, max_by_exchange, max_by_leverage))
         return size
 
+    def check_margin_health(self, portfolio: Portfolio) -> list[Violation]:
+        """Check margin ratios and return violations for exchanges needing attention.
+
+        Thresholds:
+        - Below min_collateral_ratio (default 2.0): critical — flatten immediately
+        - Below 3.0: warning — alert for monitoring
+        """
+        violations: list[Violation] = []
+        for ex_name, margin_state in portfolio.margin_by_exchange.items():
+            ratio = margin_state.ratio
+            if ratio < self.config.min_collateral_ratio:
+                violations.append(Violation(
+                    type=ViolationType.LOW_COLLATERAL,
+                    message=(
+                        f"Exchange {ex_name}: margin ratio {ratio:.2f} BELOW MAINTENANCE "
+                        f"({self.config.min_collateral_ratio:.1f}x) — FLATTEN POSITIONS"
+                    ),
+                    severity="critical",
+                    details={"exchange": ex_name, "ratio": ratio, "action": "flatten"},
+                ))
+            elif ratio < 3.0:
+                violations.append(Violation(
+                    type=ViolationType.LOW_COLLATERAL,
+                    message=(
+                        f"Exchange {ex_name}: margin ratio {ratio:.2f} approaching danger zone"
+                    ),
+                    severity="warning",
+                    details={"exchange": ex_name, "ratio": ratio, "action": "monitor"},
+                ))
+        return violations
+
+    def exchanges_to_flatten(self, portfolio: Portfolio) -> list[str]:
+        """Return exchange names where positions should be immediately closed."""
+        return [
+            ex_name
+            for ex_name, margin_state in portfolio.margin_by_exchange.items()
+            if margin_state.ratio < self.config.min_collateral_ratio
+        ]
+
     def adjust_for_regime(self, vol_regime: str) -> None:
         """Tighten or loosen parameters based on volatility regime."""
         if vol_regime == "high":
